@@ -1,0 +1,40 @@
+{
+  "gnome": {
+    "name": "Gnome",
+    "description": "Wayland over X11",
+    "commands": [
+      "nix profile install nixpkgs#gnome-shell",
+      "nix profile install nixpkgs#gnome-session",
+      "nix profile install nixpkgs#gnome-settings-daemon",
+      "nix profile install nixpkgs#gnome-control-center",
+      "nix profile install nixpkgs#gnome-backgrounds",
+      "nix profile install nixpkgs#gnome-terminal",
+      "nix profile install nixpkgs#adwaita-icon-theme",
+      "nix profile install nixpkgs#gnome-tweaks",
+      "nix profile install nixpkgs#dconf",
+      "nix profile install nixpkgs#nautilus"
+    ],
+    "launch": "XDG_CURRENT_DESKTOP=GNOME MUTTER_DEBUG_DUMMY_MODE_SPECS=1920x1080 dbus-run-session -- gnome-shell --nested"
+  },
+  "sway": {
+    "name": "Sway",
+    "description": "Wayland over X11",
+    "commands": [
+      "nix profile install nixpkgs#foot",
+      "nix profile install nixpkgs#grim",
+      "nix profile install nixpkgs#slurp",
+      "nix profile install nixpkgs#wl-clipboard",
+      "nix profile install nixpkgs#sway",
+      "nix profile install nixpkgs#hyprlock",
+      "nix profile install nixpkgs#swaybg",
+      "nix profile install nixpkgs#pulseaudio"
+    ],
+    "launch": "sway"
+  },
+  "i3": {
+    "name": "I3",
+    "description": "X11",
+    "commands": [],
+    "launch": ""
+  }
+}

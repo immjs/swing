@@ -3,50 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-
+    <title>DE picker</title>
+    <link href="style.css" rel="stylesheet" />
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&display=swap");
-
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        margin: 0px;
-        padding: 0px;
-
-        font-family: "Space Grotesk", sans-serif;
-      }
-
-      body {
+      main {
+        max-width: 1024px;
+        margin: 0 32px;
         display: flex;
         justify-content: center;
-        align-items: center;
-        background-color: #11111b;
+        flex-wrap: wrap;
+      }
+
+      .de-card + .de-card {
+        margin-left: -16px;
+      }
+
+      .de-card {
+        padding: 32px;
+        border-radius: 32px;
+        display: flex;
         flex-direction: column;
-
-        gap: 32px;
-
-        color: #cdd6f4;
+        gap: 8px;
+        text-decoration: none;
       }
-
-      main {
-        max-width: 768px;
-        margin: 0 32px;
-      }
-
-      h1 {
-        font-size: 32px;
-      }
-
-      h2 {
-        font-size: 24px;
-        font-weight: normal;
+      .de-card:hover {
+        background-color: #1E1E2E;
+        position: relative;
+        z-index: 10;
       }
     </style>
   </head>
   <body>
-    <script>
+    <script type="module">
       function htmlEscape(text) {
         return String(text)
           .replaceAll("&", "&amp;")
@@ -59,13 +47,36 @@
       const html = (strings, ...values) =>
         String.raw({ raw: strings }, ...values.map(htmlEscape));
 
-      fetch("/allowed_de.json")
-        .then((v) => v.json())
-        .then((v) => v.map((v) => html` <div class=""></div> `).join(""));
+      const dataset = await fetch("/dataset.json").then((v) => v.json());
+
+      console.log(dataset);
+
+      const { enabled, username } = await fetch("/config.json")
+        .then((v) => v.json());
+
+      document.querySelector("main").innerHTML = enabled.map((id) => html`
+        <a class="de-card" href="/start/${id}">
+          <img src="/assets/${id}.svg" />
+          <div class="text">
+            ${dataset[id].name}
+            <small>${dataset[id].description}</small>
+          </div>
+        </a>
+      `).join("");
+
+      document.querySelectorAll(".username").forEach((v) => v.innerText = username);
     </script>
 
-    <header></header>
+    <header class="text">
+      <h1>Welcome, <span class="username"></span>!</h1>
+      <h2>Choose your distribution</h2>
+    </header>
 
     <main></main>
+
+    <footer>
+      <a>Log out</a>
+      <a>Shutdown</a>
+    </footer>
   </body>
 </html>

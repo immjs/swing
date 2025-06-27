@@ -1,72 +1,228 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from posixpath import relpath
 from urllib.parse import urlparse, unquote
+from getpass import getuser
+from queue import Queue
 import os
-import mimetypes
 import subprocess
+import mimetypes
+import threading
+import json
+
+config_path = os.path.join(os.environ["HOME"], ".config", "swing", "config.json")
+if not os.path.exists(config_path):
+    config_path = "config.json"
+
+with open(config_path, "r") as content_file:
+    raw_config = json.loads(content_file.read())
+
+if not os.path.exists("dataset.json"):
+    raise Exception("Missing core file dataset.json")
+
+with open("dataset.json", "r") as content_file:
+    dataset = json.loads(content_file.read())
+
+config = raw_config.copy()
+
+if "enabled" not in config:
+    config["enabled"] = list(dataset.keys())
+
+if "username" not in config:
+    config["username"] = getuser()
+
+commands = {
+    "config": config,
+    "dataset": dataset,
+}
+
+command_queue: Queue[str] = Queue()
+# Message, Error, Is Close
+results: list[tuple[str, bool, bool]] = []
+
+currently_launching: str | None = None
+
+output = ""
+
+cancelled = {}
+
+
+def access_key(d: dict, k: str, fallback):
+    first, *last = k.split(".")
+
+    if not first in d:
+        return fallback
+
+    return d[first] if len(last) == 0 else access_key(d[first], ".")
+
+
+def run_queue():
+    global command_queue
+    global currently_launching
+
+    while True:
+        if command_queue.not_empty():
+            tag = command_queue.get()
+            first, *last = tag.split(".")
+
+            if first == "print":
+                results.append([".".join(last), False, False])
+                output += f"[print] {last}\n"
+                break
+            if first == "printend":
+                results.append([".".join(last), False, True])
+                output += f"[print] {last}\n"
+                break
+
+            commands = access_key(
+                tag,
+                commands,
+            )
+
+            for i in range(len(commands)):
+                command = commands[i]
+                currently_launching = f"[{tag}] ({i}/{len(commands)}) {command}"
+                output += f"[{tag}] ({i}/{len(commands)}) {command}"
+                completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                output += f"{completed.stdout.decode("utf-8")}\n"
+
+
+#     completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+#     pending_error += f"$ {command}\n{completed.stdout.decode("utf-8")}\n"
+#     if completed.returncode != 0:
+#       error = pending_error
+#       return
+
 
 class LocalhostHTTPHandler(BaseHTTPRequestHandler):
-  def do_GET(self):
-    if self.client_address[0] != '127.0.0.1':
-      self.send_error(403, "Forbidden (only localhost allowed)")
-      return
-
-    parsed = urlparse(self.path)
-    path = unquote(parsed.path)
-
-    if path.startswith('/start/'):
-      self.handle_start(path[7:])  # Remove '/start/' prefix
-    else:
-      self.serve_static(path[1:])
-
-  def serve_static(self, rel_path):
-    if '..' in rel_path or rel_path.startswith('/'):
-      self.send_error(403, "Forbidden")
-      return
-
-    if rel_path == '':
-      rel_path = 'index.html'
-
-    if rel_path == 'allowed_de.json':
-      rel_path = '../allowed_de.json'
-
-    static_dir = 'static'
-    full_path = os.path.join(static_dir, rel_path)
-
-    if not os.path.exists(full_path):
-      self.send_error(404, "File not found")
-      return
-
-    mimetype = mimetypes.guess_type(f"file://{full_path}")[0]
-
-    try:
-      with open(full_path, 'rb') as f:
-        self.send_response(200)
-        if mimetype is not None:
-          self.send_header('Content-type', mimetype)
+    def redirect_to_home(self):
+        self.send_response(301)
+        self.send_header("Location", "/")
         self.end_headers()
 
-        self.wfile.write(f.read())
-    except Exception as e:
-      self.send_error(500, f"Server error: {str(e)}")
+    def do_GET(self):
+        global cancelled
 
-  def handle_start(self, param):
-    self.send_response(200)
-    self.send_header('Content-type', 'text/plain')
-    self.end_headers()
-    self.wfile.write(f"You accessed /start/{param}".encode())
+        if self.client_address[0] != "127.0.0.1":
+            self.send_error(403, "Forbidden (only localhost allowed)")
+            return
+
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        if path == "/logout" or path == "/logout/":
+            os.system("killall i3")
+            self.redirect_to_home()
+            return
+
+        if path == "/shutdown" or path == "/shutdown/":
+            os.system("poweroff")
+            self.redirect_to_home()
+            return
+
+        if path.startswith("/cancel/"):
+            to_cancel = path[8:]
+
+            if to_cancel not in cancelled.keys():
+                cancelled[to_cancel] = 0
+
+            
+
+            self.redirect_to_home()
+            return
+
+        if path == "/status" or path == "/status/":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+
+            self.wfile.write(
+                json.dumps([currently_launching, launching_counter, error]).encode(
+                    "utf-8"
+                )
+            )
+            return
+        if path.startswith("/start/"):
+            self.handle_start(path[7:])  # Remove '/start/' prefix
+        else:
+            self.serve_static(path[1:])
+
+    def serve_static(self, rel_path):
+        if ".." in rel_path or rel_path.startswith("/"):
+            self.send_error(403, "Forbidden")
+            return
+
+        if rel_path == "":
+            rel_path = "index.html"
+
+        if rel_path == "config.json":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+
+            self.wfile.write(json.dumps(config))
+
+        if rel_path == "dataset.json":
+            rel_path = "../dataset.json"
+
+        static_dir = "static"
+        full_path = os.path.join(static_dir, rel_path)
+
+        if not os.path.exists(full_path):
+            self.send_error(404, "File not found")
+            return
+
+        mimetype = mimetypes.guess_type(f"file://{full_path}")[0]
+
+        try:
+            with open(full_path, "rb") as f:
+                self.send_response(200)
+                if mimetype is not None:
+                    self.send_header("Content-type", mimetype)
+                self.end_headers()
+
+                self.wfile.write(f.read())
+        except Exception as e:
+            self.send_error(500, f"Server error: {str(e)}")
+
+    def handle_start(self, param):
+        global currently_launching
+
+        if currently_launching is not None:
+            self.send_error(423, "Cancel, then start anew")
+            return
+
+        if param not in dataset.keys():
+            self.send_error(404, "No such DE")
+            return
+
+        if "enabled" in param.keys() and param not in config["enabled"]:
+            self.send_error(403, "DE forbidden")
+            return
+
+        command_queue.put()
+
+        self.send_response(301)
+        self.send_header("Location", "/status.html")
+        self.end_headers()
+
 
 def run_server(port=8000):
-  server_address = ('127.0.0.1', port)
-  httpd = HTTPServer(server_address, LocalhostHTTPHandler)
-  print(f"Serving on http://127.0.0.1:{port}")
-  os.system("firefox --new-window --kiosk http://127.0.0.1:8000")
-  try:
-    httpd.serve_forever()
-  except KeyboardInterrupt:
-    print("\nServer shutting down...")
-  finally:
-    httpd.server_close()
+    server_address = ("127.0.0.1", port)
+    httpd = HTTPServer(server_address, LocalhostHTTPHandler)
 
-if __name__ == '__main__':
-  run_server(8000)
+    background_thread = threading.Thread(target=run_queue)
+    background_thread.daemon = True
+    background_thread.start()
+
+    print(f"Serving on http://127.0.0.1:{port}")
+    os.system(f"firefox --new-window --kiosk http://127.0.0.1:{port}")
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer shutting down...")
+    finally:
+        httpd.server_close()
+
+
+if __name__ == "__main__":
+    run_server(8000)

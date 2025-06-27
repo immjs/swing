@@ -1,0 +1,20 @@
+{
+  "enabled": [
+    "gnome",
+    "sway",
+    "i3"
+  ],
+  "username": "Juliette",
+  "close_in": 3,
+  "autoselect_in": 3,
+  "additional": {
+    "sway": [
+      "nix profile install nixpkgs#"
+    ],
+    "all": [
+      
+    ]
+  },
+  "hide": [
+  ]
+}
