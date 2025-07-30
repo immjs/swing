@@ -9,7 +9,7 @@
   "autoselect_in": 3,
   "additional": {
     "sway": [
-      "nix profile install nixpkgs#"
+      "nix profile install nixpkgs#wl-clipboard"
     ],
     "all": [
       

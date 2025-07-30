@@ -55,13 +55,15 @@
         .then((v) => v.json());
 
       document.querySelector("main").innerHTML = enabled.map((id) => html`
-        <a class="de-card" href="/start/${id}">
-          <img src="/assets/${id}.svg" />
-          <div class="text">
-            ${dataset[id].name}
-            <small>${dataset[id].description}</small>
-          </div>
-        </a>
+        <form action="/start/${id}" method="POST">
+          <button class="de-card">
+            <img src="/assets/${id}.svg" />
+            <div class="text">
+              ${dataset[id].name}
+              <small>${dataset[id].description}</small>
+            </div>
+          </button>
+        </form>
       `).join("");
 
       document.querySelectorAll(".username").forEach((v) => v.innerText = username);
@@ -78,5 +80,7 @@
       <a>Log out</a>
       <a>Shutdown</a>
     </footer>
+
+    <script src="/aside.js"></script>
   </body>
 </html>

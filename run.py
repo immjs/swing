@@ -2,11 +2,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, unquote
 from getpass import getuser
 from queue import Queue
-import os
+from typing import Any
 import subprocess
 import mimetypes
 import threading
 import json
+import os
 
 config_path = os.path.join(os.environ["HOME"], ".config", "swing", "config.json")
 if not os.path.exists(config_path):
@@ -29,13 +30,13 @@ if "enabled" not in config:
 if "username" not in config:
     config["username"] = getuser()
 
-commands = {
+commands: dict[str, Any] = {
     "config": config,
     "dataset": dataset,
 }
 
 command_queue: Queue[str] = Queue()
-# Message, Error, Is Close
+# Message, Error, Is This The End?
 results: list[tuple[str, bool, bool]] = []
 
 currently_launching: str | None = None
@@ -44,45 +45,66 @@ output = ""
 
 cancelled = {}
 
-
-def access_key(d: dict, k: str, fallback):
+def access_key(d: dict, k: str, fallback = None) -> Any:
     first, *last = k.split(".")
 
     if not first in d:
         return fallback
 
-    return d[first] if len(last) == 0 else access_key(d[first], ".")
+    return d[first] if len(last) == 0 else access_key(d[first], ".".join(last), fallback)
 
+states: dict[str, bool] = {}
 
 def run_queue():
     global command_queue
     global currently_launching
+    global commands
+    global output
+    global states
 
     while True:
-        if command_queue.not_empty():
+        if command_queue.not_empty:
             tag = command_queue.get()
             first, *last = tag.split(".")
 
             if first == "print":
-                results.append([".".join(last), False, False])
+                results.append((".".join(last), False, False))
                 output += f"[print] {last}\n"
                 break
             if first == "printend":
-                results.append([".".join(last), False, True])
+                results.append((".".join(last), False, True))
                 output += f"[print] {last}\n"
                 break
+            if first == "addstate":
+                states[".".join(last)] = True
+                break
 
-            commands = access_key(
-                tag,
+            print(tag, commands)
+
+            commands_list: list[str] | str = access_key(
                 commands,
+                tag,
+                [],
             )
 
-            for i in range(len(commands)):
-                command = commands[i]
-                currently_launching = f"[{tag}] ({i}/{len(commands)}) {command}"
-                output += f"[{tag}] ({i}/{len(commands)}) {command}"
-                completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            if isinstance(commands_list, str):
+                commands_list = [commands_list]
+
+            for i in range(len(commands_list)):
+                command = commands_list[i]
+                currently_launching = f"[{tag}] ({i}/{len(commands_list)}) {command}"
+
+                output += currently_launching
+
+                completed = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 output += f"{completed.stdout.decode("utf-8")}\n"
+
+                results.append((currently_launching, completed.returncode != 0, False))
+
+                if completed.returncode != 0:
+                    break
+
+            currently_launching = None
 
 
 #     completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -108,42 +130,37 @@ class LocalhostHTTPHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
 
-        if path == "/logout" or path == "/logout/":
-            os.system("killall i3")
-            self.redirect_to_home()
-            return
-
-        if path == "/shutdown" or path == "/shutdown/":
-            os.system("poweroff")
-            self.redirect_to_home()
-            return
-
-        if path.startswith("/cancel/"):
-            to_cancel = path[8:]
-
-            if to_cancel not in cancelled.keys():
-                cancelled[to_cancel] = 0
-
-            
-
-            self.redirect_to_home()
-            return
-
         if path == "/status" or path == "/status/":
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
 
             self.wfile.write(
-                json.dumps([currently_launching, launching_counter, error]).encode(
+                json.dumps([currently_launching, results]).encode(
                     "utf-8"
                 )
             )
             return
+
+        self.serve_static(path[1:])
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        # if path.startswith("/cancel/"):
+        #     to_cancel = path[8:]
+
+        #     if to_cancel not in cancelled.keys():
+        #         cancelled[to_cancel] = 0
+
+        #     cancelled[to_cancel] += 1
+
+        #     self.redirect_to_home()
+        #     return
+
         if path.startswith("/start/"):
             self.handle_start(path[7:])  # Remove '/start/' prefix
-        else:
-            self.serve_static(path[1:])
 
     def serve_static(self, rel_path):
         if ".." in rel_path or rel_path.startswith("/"):
@@ -158,7 +175,7 @@ class LocalhostHTTPHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
 
-            self.wfile.write(json.dumps(config))
+            return self.wfile.write(json.dumps(config).encode())
 
         if rel_path == "dataset.json":
             rel_path = "../dataset.json"
@@ -183,7 +200,7 @@ class LocalhostHTTPHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, f"Server error: {str(e)}")
 
-    def handle_start(self, param):
+    def handle_start(self, param: str):
         global currently_launching
 
         if currently_launching is not None:
@@ -194,20 +211,27 @@ class LocalhostHTTPHandler(BaseHTTPRequestHandler):
             self.send_error(404, "No such DE")
             return
 
-        if "enabled" in param.keys() and param not in config["enabled"]:
+        if "enabled" in config.keys() and param not in config["enabled"]:
             self.send_error(403, "DE forbidden")
             return
 
-        command_queue.put()
+        command_queue.put(f"dataset.{param}.commands")
+        command_queue.put(f"config.additional.{param}")
+        command_queue.put(f"config.additional.all")
+        command_queue.put(f"dataset.{param}.launch")
 
         self.send_response(301)
-        self.send_header("Location", "/status.html")
+        self.send_header("Location", f"/status.html?launching={param}")
         self.end_headers()
 
 
 def run_server(port=8000):
     server_address = ("127.0.0.1", port)
     httpd = HTTPServer(server_address, LocalhostHTTPHandler)
+
+    command_queue.put(f"config.prepick")
+    command_queue.put(f"addstate.prepick")
+    command_queue.put(f"config.setup")
 
     background_thread = threading.Thread(target=run_queue)
     background_thread.daemon = True

@@ -10,6 +10,10 @@
   </head>
   <body>
     <script type="module">
+      const currLaunchDE = new URLSearchParams(location.search).get("launching");
+
+      document.querySelector("#de-image").src = `/assets/${currLaunchDE}.svg`;
+
       function htmlEscape(text) {
         return String(text)
           .replaceAll("&", "&amp;")
@@ -24,40 +28,53 @@
 
       const dataset = await fetch("/dataset.json").then((v) => v.json());
 
+
       async function update() {
-        const [currentlyLaunching, launchingCounter, error] = await fetch("/status").then((v) => v.json());
+        const [currentlyLaunching, results] = await fetch("/status").then((v) => v.json());
+
+        const error = results.at(-1)?.[1];
+        const isEnd = results.at(-1)?.[2];
 
         const data = dataset[currentlyLaunching];
 
-        document.querySelector("main").innerHTML = enabled.map((id) => html`
-          <a class="de-card" href="/start/${id}">
-            <img src="/assets/${id}.svg" />
-            <div class="text">
-              ${dataset[id].name}
-              <small>${dataset[id].description}</small>
-            </div>
-          </a>
-        `).join("");
+        document.querySelector("#de-image-status").dataset.maskvariant = error
+          ? "error"
+          : isEnd
+            ? ""
+            : "pending";
 
-        document.querySelectorAll(".status").forEach((v) => {
-          if (error) {
-            v.innerText = `Failed launching ${currentlyLaunching}!`;
-          }
-        });
+        document.querySelector("#status").innerText = error
+          ? `Failed to launch ${currLaunchDE}!`
+          : `Launching ${currLaunchDE}...`;
+
+        if (error) {
+          clearInterval(update);
+
+          document.querySelector("#back_to_home").style.display = "block";
+        }
       }
 
       await update();
+
+      setInterval(update, 100);
     </script>
 
     <header>
-      <h1 class="status"></h1>
+      <h1 id="status"></h1>
     </header>
 
-    <main></main>
+    <main>
+      <div class="composite-image">
+        <div class="above-image" id="de-image-status"></div>
+        <img id="de-image" />
+      </div>
+    </main>
 
     <footer>
-      <a>Log out</a>
-      <a>Shutdown</a>
+      <a id="back_to_home" style="display: none;">Back to Home</a>
+      <a>Copy trace</a>
     </footer>
+
+    <script src="/aside.js"></script>
   </body>
 </html>

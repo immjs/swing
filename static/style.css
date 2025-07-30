@@ -55,3 +55,68 @@ footer {
   display: flex;
   gap: 16px;
 }
+
+button {
+  appearance: none;
+  background: unset;
+  color: unset;
+  font: unset;
+  border: unset;
+}
+
+.chip {
+  width: 12px;
+  height: 24px;
+  border-radius: 6px;
+}
+.chip[data-type=ok] {
+  background-color: #A6E3A1;
+}
+.chip[data-type=pending] {
+  background-color: #F9E2AF;
+}
+.chip[data-type=error] {
+  background-color: #F38BA8;
+}
+
+#before-last {
+  opacity: 0.5;
+}
+
+#before-last, #last {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+aside {
+  position: absolute;
+  bottom: 32px;
+  left: 32px;
+  right: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+img {
+  display: block;
+}
+
+.composite-image {
+  position: relative;
+}
+.composite-image .above-image {
+  z-index: 100;
+  inset: 0;
+  position: absolute;
+  border-radius: 4px;
+  mix-blend-mode: color;
+}
+
+[data-maskvariant=pending] {
+  background-color: #cdd6f4;
+}
+[data-maskvariant=error] {
+  background-color: #F38BA8;
+}
